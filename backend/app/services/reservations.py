@@ -27,7 +27,8 @@ async def calculate_monthly_revenue(property_id: str, tenant_id: str, month: int
 
     query = text("""
         SELECT
-            COALESCE(SUM(r.total_amount), 0) as total_revenue,
+            r.currency,
+            SUM(r.total_amount) as total_revenue,
             COUNT(r.id) as reservation_count
         FROM reservations r
         JOIN properties p ON p.id = r.property_id AND p.tenant_id = r.tenant_id
@@ -35,6 +36,7 @@ async def calculate_monthly_revenue(property_id: str, tenant_id: str, month: int
         AND r.tenant_id = :tenant_id
         AND (r.check_in_date AT TIME ZONE p.timezone) >= :start_date
         AND (r.check_in_date AT TIME ZONE p.timezone) < :end_date
+        GROUP BY r.currency
     """)
 
     async with await _get_session() as session:
@@ -44,15 +46,9 @@ async def calculate_monthly_revenue(property_id: str, tenant_id: str, month: int
             "start_date": start_date,
             "end_date": end_date,
         })
-        row = result.fetchone()
+        rows = result.fetchall()
 
-    return {
-        "property_id": property_id,
-        "tenant_id": tenant_id,
-        "total": str(Decimal(str(row.total_revenue))),
-        "currency": "USD",
-        "count": row.reservation_count
-    }
+    return _summary(property_id, tenant_id, rows)
 
 
 async def calculate_total_revenue(property_id: str, tenant_id: str) -> Dict[str, Any]:
@@ -61,10 +57,12 @@ async def calculate_total_revenue(property_id: str, tenant_id: str) -> Dict[str,
     """
     query = text("""
         SELECT
-            COALESCE(SUM(total_amount), 0) as total_revenue,
+            currency,
+            SUM(total_amount) as total_revenue,
             COUNT(*) as reservation_count
         FROM reservations
         WHERE property_id = :property_id AND tenant_id = :tenant_id
+        GROUP BY currency
     """)
 
     async with await _get_session() as session:
@@ -72,15 +70,31 @@ async def calculate_total_revenue(property_id: str, tenant_id: str) -> Dict[str,
             "property_id": property_id,
             "tenant_id": tenant_id
         })
-        row = result.fetchone()
+        rows = result.fetchall()
 
+    return _summary(property_id, tenant_id, rows)
+
+
+def _summary(property_id: str, tenant_id: str, rows) -> Dict[str, Any]:
+    if len(rows) > 1:
+        raise ValueError("Reservations for this property are in more than one currency")
+
+    row = rows[0] if rows else None
     return {
         "property_id": property_id,
         "tenant_id": tenant_id,
-        "total": str(Decimal(str(row.total_revenue))),
-        "currency": "USD",
-        "count": row.reservation_count
+        "total": str(Decimal(str(row.total_revenue))) if row else "0.00",
+        "currency": row.currency if row else "USD",
+        "count": row.reservation_count if row else 0
     }
+
+
+async def property_belongs_to_tenant(property_id: str, tenant_id: str) -> bool:
+    query = text("SELECT 1 FROM properties WHERE id = :property_id AND tenant_id = :tenant_id")
+
+    async with await _get_session() as session:
+        result = await session.execute(query, {"property_id": property_id, "tenant_id": tenant_id})
+        return result.first() is not None
 
 
 async def get_tenant_properties(tenant_id: str) -> list:

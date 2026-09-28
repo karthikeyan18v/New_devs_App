@@ -7,6 +7,7 @@ const Dashboard: React.FC = () => {
   const [properties, setProperties] = useState<{ id: string; name: string }[]>([]);
   const [selectedProperty, setSelectedProperty] = useState('');
   const [selectedMonth, setSelectedMonth] = useState(''); // "YYYY-MM", empty = all time
+  const [error, setError] = useState('');
 
   useEffect(() => {
     SecureAPI.getDashboardProperties()
@@ -14,7 +15,10 @@ const Dashboard: React.FC = () => {
         setProperties(res.properties);
         if (res.properties.length) setSelectedProperty(res.properties[0].id);
       })
-      .catch((err) => console.error(err));
+      .catch((err) => {
+        console.error(err);
+        setError('Failed to load properties');
+      });
   }, []);
 
   return (
@@ -58,6 +62,7 @@ const Dashboard: React.FC = () => {
           </div>
 
           <div className="space-y-6">
+            {error && <div className="p-4 text-red-500 bg-red-50 rounded-lg">{error}</div>}
             {selectedProperty && <RevenueSummary propertyId={selectedProperty} month={selectedMonth} />}
             {selectedProperty && <BookingsList propertyId={selectedProperty} month={selectedMonth} />}
           </div>

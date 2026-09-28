@@ -11,7 +11,7 @@ async def _get_session():
     if db_pool.session_factory is None:
         await db_pool.initialize()
     if db_pool.session_factory is None:
-        raise Exception("Database pool not available")
+        raise ConnectionError("Database pool not available")
     return db_pool.get_session()
 
 
